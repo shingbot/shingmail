@@ -91,6 +91,32 @@ done
 | `SHINGMAIL_JWT` | agent token 模式 |
 | `SHINGMAIL_SITE_PASSWORD` | 站点访问密码（当前未启用） |
 
+## 常见问题
+
+| 现象 | 原因 / 处理 |
+|---|---|
+| `401 InvalidAddressCredentialMsg` | JWT 过期/不对；密码模式会自动重登；仍失败检查地址/密码 |
+| `423 Too many failed login attempts` | 登录锁定（同 IP+邮箱 10 次 / 跨 IP 50 次，15 分钟）；等 15 分钟 |
+| `429 Rate limit exceeded` | IP+path 20 次/分钟；按 3s→10s 退避 |
+| `Sending is disabled for this mailbox` | `can_send=false`；联系管理员开通，不要重试 |
+| `send_balance` 为 0 | 余额用尽；联系管理员 |
+| `CustomAuthPasswordMsg` | 站点又开启访问密码；补 `SHINGMAIL_SITE_PASSWORD` |
+| `404 on parsed_mail` | 旧部署；改用 `/api/mails` + 本地解析 |
+
+## 退出与吊销
+
+| 场景 | 命令 | 效果 |
+|---|---|---|
+| agent token 停用 | `shingmail logout` | 服务端 `token_version+1`，token 立即失效；agent 无法自行恢复 |
+| 密码模式退出 | `shingmail logout` | 只清本地 JWT；密码还在就能再登录，**不是吊销** |
+| 彻底停用 | `shingmail passwd` 或管理侧 `disable` | 旧密码/旧 JWT 一起失效 |
+
+## 版本与发布
+
+- 当前版本：**1.1.0**（`shingmail --version`）。
+- 本仓库是技能唯一源；推送后 GitHub Actions 会跑语法检查、`--version/--help`、可执行位与 `bash -n install.sh`。
+- 本地修改后提交到 `weshing/shingmail` 即可；不要再把技能复制回应用仓库。
+
 ## 安全
 
 - 邮箱密码与 agent token 都是账户凭据：不要贴进对话、不要提交到仓库。
