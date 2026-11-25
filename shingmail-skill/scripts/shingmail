@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_BASE = "https://mail.shingbot.com"
+VERSION = "1.1.0"
 CONFIG_PATH = Path(os.environ.get("SHINGMAIL_CONFIG", str(Path.home() / ".config/shingmail/credentials.json")))
 
 
@@ -52,7 +53,11 @@ def load_cfg() -> dict:
 
 def save_cfg(cfg: dict) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2))
+    tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(cfg, ensure_ascii=False, indent=2))
+    os.replace(tmp, CONFIG_PATH)
     os.chmod(CONFIG_PATH, 0o600)
 
 
@@ -111,7 +116,7 @@ def login(cfg: dict) -> dict:
 
 def http(cfg: dict, method: str, path: str, body: dict | None = None, auth: bool = True) -> tuple[int, object]:
     url = cfg["base"].rstrip("/") + path
-    headers = {"Accept": "application/json", "User-Agent": "shingmail-skill/1.0"}
+    headers = {"Accept": "application/json", "User-Agent": f"shingmail-skill/{VERSION}"}
     if body is not None:
         headers["Content-Type"] = "application/json"
         data = json.dumps(body).encode()
@@ -169,6 +174,8 @@ def call(cfg: dict, method: str, path: str, body: dict | None = None) -> object:
 def cmd_init(args: argparse.Namespace) -> None:
     cfg = load_cfg()
     cfg["base"] = args.base or cfg.get("base") or DEFAULT_BASE
+    if args.site_password is not None:
+        cfg["site_password"] = args.site_password
     if args.token:
         cfg.pop("password", None)
         cfg["jwt"] = args.token
@@ -320,6 +327,7 @@ def cmd_logout(args: argparse.Namespace) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(prog="shingmail")
+    p.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sp = sub.add_parser("init", help="保存地址+密码并登录（密码走隐藏输入）")

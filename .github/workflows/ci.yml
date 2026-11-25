@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: 语法检查
+        run: python3 -m py_compile shingmail-skill/scripts/shingmail
+      - name: 版本与帮助
+        run: |
+          python3 shingmail-skill/scripts/shingmail --version
+          python3 shingmail-skill/scripts/shingmail --help >/dev/null
+      - name: 可执行位与安装脚本
+        run: |
+          test -x shingmail-skill/scripts/shingmail
+          bash -n install.sh

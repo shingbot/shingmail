@@ -1,18 +1,18 @@
 ---
 name: shingmail-skill
 description: 用 shingmail（https://mail.shingbot.com）读写自己的 @shingbot.com 邮箱：列出收件箱、读信、取验证码或登录链接、发信、看已发送。凭证是「邮箱地址 + 邮箱密码」（或 SHINGMAIL_JWT）；首次 `shingmail init` 写入 ~/.config/shingmail/credentials.json（0600）。当用户要查某个网站的验证码、读一封邮件、用自己的 @shingbot.com 邮箱发信，或提到 shingmail / shingbot 邮箱 / 临时邮箱时使用。
-version: 1.0.0
+version: 1.1.0
 ---
 
 # shingmail — 用户侧收发邮件
 
-一个邮箱 = 一个地址 + 一个密码。本技能只操作**自己的**邮箱。
+一个邮箱 = 一个地址（+ 密码或 agent token）。本技能只操作**自己的**邮箱。
 
 服务端：Cloudflare Worker `shingmail`，API 基址 `https://mail.shingbot.com`，邮件域 `@shingbot.com`。
 
 ## 一、准备
 
-安装：从 <https://github.com/weshing/shingmail> 取 `shingmail-skill/` 放进你的 skills 目录；命令入口是 `scripts/shingmail`（加进 PATH，或用绝对路径调用）。
+安装：从 <https://github.com/weshing/shingmail> 取仓库，运行 `./install.sh [skills 目录]`（默认 `~/.config/opencode/skills`）；或把 `shingmail-skill/` 手动放进 skills 目录。命令入口是 `scripts/shingmail`（加进 PATH，或用绝对路径调用）。
 
 你会拿到两种凭证之一：
 
@@ -44,7 +44,7 @@ export SHINGMAIL_ADDRESS=alice@shingbot.com
 export SHINGMAIL_PASSWORD='...'          # 不建议写进脚本
 ```
 
-凭证文件：`~/.config/shingmail/credentials.json`，权限 600。里面会缓存 JWT 及其过期时间；密码模式下 JWT 快过期或 401 时自动用密码重登；token 模式下不会自动续期。
+凭证文件：`~/.config/shingmail/credentials.json`，权限 600（可用 `SHINGMAIL_CONFIG` 指定其他路径）。里面会缓存 JWT 及其过期时间；密码模式下 JWT 快过期或 401 时自动用密码重登；token 模式下不会自动续期。
 
 > 站点访问密码当前**已关闭**，一般不需要 `SHINGMAIL_SITE_PASSWORD`；只有以后重新开启时才有用。
 
