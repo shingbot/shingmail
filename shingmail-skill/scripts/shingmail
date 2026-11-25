@@ -1,0 +1,369 @@
+#!/usr/bin/env python3
+"""shingmail — 普通用户/agent 读写自己的 shingmail 邮箱。
+
+凭证：地址 + 密码，或一个 agent token；首次 `shingmail init` 写入
+~/.config/shingmail/credentials.json（0600）。也可用环境变量：
+  SHINGMAIL_BASE / SHINGMAIL_ADDRESS / SHINGMAIL_PASSWORD / SHINGMAIL_JWT
+站点若启用访问密码，再加 SHINGMAIL_SITE_PASSWORD。
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import getpass
+import hashlib
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+DEFAULT_BASE = "https://mail.shingbot.com"
+CONFIG_PATH = Path(os.environ.get("SHINGMAIL_CONFIG", str(Path.home() / ".config/shingmail/credentials.json")))
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(json.dumps({"error": msg}, ensure_ascii=False), file=sys.stderr)
+    sys.exit(code)
+
+
+def load_cfg() -> dict:
+    cfg: dict = {}
+    if CONFIG_PATH.is_file():
+        try:
+            cfg = json.loads(CONFIG_PATH.read_text())
+        except Exception as e:
+            die(f"凭证文件解析失败: {CONFIG_PATH}: {e}")
+    for k, env in (
+        ("base", "SHINGMAIL_BASE"),
+        ("address", "SHINGMAIL_ADDRESS"),
+        ("password", "SHINGMAIL_PASSWORD"),
+        ("jwt", "SHINGMAIL_JWT"),
+        ("site_password", "SHINGMAIL_SITE_PASSWORD"),
+    ):
+        if os.environ.get(env):
+            cfg[k] = os.environ[env]
+    cfg.setdefault("base", DEFAULT_BASE)
+    return cfg
+
+
+def save_cfg(cfg: dict) -> None:
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2))
+    os.chmod(CONFIG_PATH, 0o600)
+
+
+def jwt_exp(token: str) -> int:
+    try:
+        part = token.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(part))
+        return int(payload.get("exp") or 0)
+    except Exception:
+        return 0
+
+
+def jwt_type(token: str) -> str:
+    try:
+        part = token.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        return str(json.loads(base64.urlsafe_b64decode(part)).get("type") or "")
+    except Exception:
+        return ""
+
+
+def jwt_address(token: str) -> str:
+    try:
+        part = token.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        return str(json.loads(base64.urlsafe_b64decode(part)).get("address") or "")
+    except Exception:
+        return ""
+
+
+def sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def try_login(cfg: dict) -> tuple[bool, int, object]:
+    address, password = cfg.get("address"), cfg.get("password")
+    if not address or not password:
+        return False, 0, "缺少地址或密码"
+    status, data = http(cfg, "POST", "/api/address_login",
+                        {"email": address, "password": sha256_hex(password)}, auth=False)
+    if status == 200 and isinstance(data, dict) and data.get("jwt"):
+        cfg["jwt"] = data["jwt"]
+        cfg["exp"] = jwt_exp(data["jwt"])
+        save_cfg(cfg)
+        return True, status, data
+    return False, status, data
+
+
+def login(cfg: dict) -> dict:
+    ok, status, data = try_login(cfg)
+    if not ok:
+        die(f"登录失败 (HTTP {status}): {data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)}")
+    return cfg
+
+
+def http(cfg: dict, method: str, path: str, body: dict | None = None, auth: bool = True) -> tuple[int, object]:
+    url = cfg["base"].rstrip("/") + path
+    headers = {"Accept": "application/json", "User-Agent": "shingmail-skill/1.0"}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(body).encode()
+    else:
+        data = None
+    if cfg.get("site_password"):
+        headers["x-custom-auth"] = cfg["site_password"]
+    if auth and cfg.get("jwt"):
+        headers["Authorization"] = "Bearer " + cfg["jwt"]
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read().decode("utf-8", "replace")
+            status = r.status
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace")
+        status = e.code
+    except urllib.error.URLError as e:
+        die(f"网络错误: {e}")
+    try:
+        return status, json.loads(raw)
+    except Exception:
+        return status, raw
+
+
+def ensure_jwt(cfg: dict) -> dict:
+    token = cfg.get("jwt")
+    if token:
+        token_address = jwt_address(token)
+        if token_address and not cfg.get("address"):
+            cfg["address"] = token_address
+        if (
+            token_address == cfg.get("address")
+            and jwt_exp(token) > int(time.time()) + 60
+        ):
+            return cfg
+    if not cfg.get("password"):
+        die("访问令牌缺失或已过期；请重新获取 agent token（或改用地址+密码）")
+    return login(cfg)
+
+
+def call(cfg: dict, method: str, path: str, body: dict | None = None) -> object:
+    cfg = ensure_jwt(cfg)
+    status, data = http(cfg, method, path, body)
+    if status == 401:
+        if not cfg.get("password"):
+            die("访问令牌已失效或被吊销；请重新获取 agent token")
+        cfg = login(cfg)
+        status, data = http(cfg, method, path, body)
+    if status >= 400:
+        die(f"HTTP {status}: {data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)}")
+    return data
+
+
+def cmd_init(args: argparse.Namespace) -> None:
+    cfg = load_cfg()
+    cfg["base"] = args.base or cfg.get("base") or DEFAULT_BASE
+    if args.token:
+        cfg.pop("password", None)
+        cfg["jwt"] = args.token
+        cfg["exp"] = jwt_exp(args.token)
+        cfg["address"] = args.address or jwt_address(args.token)
+        save_cfg(cfg)
+        data = call(cfg, "GET", "/api/settings")
+        print(json.dumps({
+            "ok": True, "config": str(CONFIG_PATH), "mode": "agent_token",
+            "address": cfg["address"], "base": cfg["base"],
+            "jwt_expires_in_days": round((cfg["exp"] - time.time()) / 86400, 1) if cfg.get("exp") else None,
+            "settings": data,
+        }, ensure_ascii=False, indent=2))
+        return
+    cfg["address"] = args.address or input("邮箱地址: ").strip()
+    if args.password:
+        cfg["password"] = args.password
+    else:
+        p1 = getpass.getpass("邮箱密码: ")
+        p2 = getpass.getpass("再输一次: ")
+        if p1 != p2:
+            die("两次密码不一致")
+        cfg["password"] = p1
+    if args.site_password is not None:
+        cfg["site_password"] = args.site_password
+    cfg.pop("jwt", None); cfg.pop("exp", None)
+    cfg = login(cfg)
+    print(json.dumps({
+        "ok": True,
+        "config": str(CONFIG_PATH),
+        "address": cfg["address"],
+        "base": cfg["base"],
+        "jwt_expires_in_days": round((cfg["exp"] - time.time()) / 86400, 1) if cfg.get("exp") else None,
+    }, ensure_ascii=False, indent=2))
+
+
+def cmd_settings(args: argparse.Namespace) -> None:
+    print(json.dumps(call(load_cfg(), "GET", "/api/settings"), ensure_ascii=False, indent=2))
+
+
+def cmd_list(args: argparse.Namespace) -> None:
+    print(json.dumps(call(load_cfg(), "GET", f"/api/parsed_mails?limit={args.limit}&offset={args.offset}"),
+                     ensure_ascii=False, indent=2))
+
+
+def cmd_read(args: argparse.Namespace) -> None:
+    print(json.dumps(call(load_cfg(), "GET", f"/api/parsed_mail/{args.id}"), ensure_ascii=False, indent=2))
+
+
+def cmd_code(args: argparse.Namespace) -> None:
+    data = call(load_cfg(), "GET", "/api/parsed_mails?limit=1&offset=0")
+    items = (data or {}).get("results") or []
+    if not items:
+        print(json.dumps({"found": False})) ; return
+    item = items[0]
+    text = " ".join([item.get("subject") or "", item.get("text") or "", item.get("html") or ""])
+    # 先找“code/验证码”附近的 4-8 位；再退化为独立 6 位（排除 token 里的数字与 000000）
+    m = re.search(r"(?:code|verification|confirm|otp|验证码|确认码|安全码|激活码)[^\d]{0,30}(\d{4,8})", text, re.I)
+    code = m.group(1) if m else None
+    if not code:
+        cands = [c for c in re.findall(r"(?<![A-Za-z0-9])(\d{6})(?![A-Za-z0-9])", text) if c not in ("000000",)]
+        code = cands[0] if cands else None
+    links = re.findall(r"https?://[^\s\"'<>]+", text)
+    print(json.dumps({
+        "found": True, "id": item.get("id"), "subject": item.get("subject"),
+        "from": item.get("sender") or item.get("source"), "created_at": item.get("created_at"),
+        "code": code, "link": links[0] if links else None,
+    }, ensure_ascii=False, indent=2))
+
+
+def cmd_send(args: argparse.Namespace) -> None:
+    body = {
+        "from_name": args.from_name or "",
+        "to_mail": args.to,
+        "to_name": args.to_name or "",
+        "subject": args.subject,
+        "content": args.body,
+        "is_html": bool(args.html),
+    }
+    print(json.dumps(call(load_cfg(), "POST", "/api/send_mail", body), ensure_ascii=False, indent=2))
+
+
+def cmd_sendbox(args: argparse.Namespace) -> None:
+    print(json.dumps(call(load_cfg(), "GET", f"/api/sendbox?limit={args.limit}&offset={args.offset}"),
+                     ensure_ascii=False, indent=2))
+
+
+def cmd_delete(args: argparse.Namespace) -> None:
+    print(json.dumps(call(load_cfg(), "DELETE", f"/api/mails/{args.id}"), ensure_ascii=False, indent=2))
+
+
+def cmd_passwd(args: argparse.Namespace) -> None:
+    cfg = load_cfg()
+    if not cfg.get("password"):
+        die("当前是 agent token 模式，不能改密；请用人工密码登录网页或 CLI 修改")
+    current = args.current_password or cfg.get("password")
+    if not current:
+        current = getpass.getpass("当前邮箱密码: ")
+    cfg["password"] = current
+    cfg = login(cfg)  # 先验证当前密码
+    if args.new_password_stdin:
+        new = sys.stdin.readline().rstrip("\n")
+    else:
+        new = getpass.getpass("新密码（至少 8 位）: ")
+        again = getpass.getpass("再输一次: ")
+        if new != again:
+            die("两次新密码不一致")
+    if len(new) < 8:
+        die("新密码至少 8 位")
+    status, data = http(cfg, "POST", "/api/address_change_password",
+                        {"new_password": sha256_hex(new)})
+    if status >= 400:
+        die(f"改密失败 (HTTP {status}): {data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)}")
+    cfg["password"] = new
+    cfg.pop("jwt", None); cfg.pop("exp", None)
+    save_cfg(cfg)
+    ok, status, data = try_login(cfg)  # 改密已 bump token_version，旧 JWT 全部失效
+    print(json.dumps({"ok": True, "address": cfg.get("address"),
+                      "relogin": ok,
+                      "note": "旧密码与所有旧 JWT 已失效；已用新密码重新登录。" if ok
+                      else f"密码已更新，但新密码自动登录失败 (HTTP {status})，请手动 `shingmail init`。"},
+                     ensure_ascii=False, indent=2))
+
+
+def cmd_logout(args: argparse.Namespace) -> None:
+    cfg = load_cfg()
+    token_mode = not cfg.get("password")
+    revoked = False
+    if not cfg.get("jwt"):
+        try_login(cfg)
+    if cfg.get("jwt"):
+        status, _ = http(cfg, "POST", "/api/address_logout")
+        if status == 401 and try_login(cfg):
+            status, _ = http(cfg, "POST", "/api/address_logout")
+        revoked = status == 200
+    cfg.pop("jwt", None); cfg.pop("exp", None)
+    if args.forget:
+        cfg.pop("password", None)
+    save_cfg(cfg)
+    note = "服务端 token_version 已 +1，所有旧 JWT 立即失效。"
+    if revoked and token_mode:
+        note = "agent token 已吊销；agent 没有密码，无法自行恢复，需重新获取 token。"
+    elif not revoked:
+        note = "未能在服务端吊销（JWT 已失效或无密码），仅清除了本地 JWT。"
+    print(json.dumps({"ok": True, "address": cfg.get("address"),
+                      "server_revoked": revoked, "forgot_password": bool(args.forget),
+                      "note": note}, ensure_ascii=False, indent=2))
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(prog="shingmail")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sp = sub.add_parser("init", help="保存地址+密码并登录（密码走隐藏输入）")
+    sp.add_argument("--base"); sp.add_argument("--address"); sp.add_argument("--password"); sp.add_argument("--token")
+    sp.add_argument("--site-password", dest="site_password")
+    sp.set_defaults(func=cmd_init)
+
+    sub.add_parser("settings", help="当前邮箱/send_balance").set_defaults(func=cmd_settings)
+    sub.add_parser("whoami", help="同 settings").set_defaults(func=cmd_settings)
+
+    sp = sub.add_parser("list", help="列出收件箱（服务端已解析）")
+    sp.add_argument("--limit", type=int, default=20); sp.add_argument("--offset", type=int, default=0)
+    sp.set_defaults(func=cmd_list)
+
+    sp = sub.add_parser("read", help="读一封邮件")
+    sp.add_argument("id", type=int); sp.set_defaults(func=cmd_read)
+
+    sub.add_parser("code", help="取最新一封的验证码/链接").set_defaults(func=cmd_code)
+
+    sp = sub.add_parser("send", help="发信")
+    sp.add_argument("--to", required=True); sp.add_argument("--subject", required=True)
+    sp.add_argument("--body", required=True); sp.add_argument("--html", action="store_true")
+    sp.add_argument("--from-name", dest="from_name"); sp.add_argument("--to-name", dest="to_name")
+    sp.set_defaults(func=cmd_send)
+
+    sp = sub.add_parser("sendbox", help="已发送")
+    sp.add_argument("--limit", type=int, default=20); sp.add_argument("--offset", type=int, default=0)
+    sp.set_defaults(func=cmd_sendbox)
+
+    sp = sub.add_parser("delete", help="删除收件箱邮件")
+    sp.add_argument("id", type=int); sp.set_defaults(func=cmd_delete)
+
+    sp = sub.add_parser("passwd", aliases=["password"], help="修改邮箱密码（隐藏输入）")
+    sp.add_argument("--current-password", dest="current_password")
+    sp.add_argument("--new-password-stdin", action="store_true", help="从 stdin 读一行作为新密码")
+    sp.set_defaults(func=cmd_passwd)
+
+    sp = sub.add_parser("logout", help="清除本地 JWT")
+    sp.add_argument("--forget", action="store_true", help="连本地保存的密码一起删除，下次必须重新输入")
+    sp.set_defaults(func=cmd_logout)
+
+    args = p.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
