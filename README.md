@@ -43,6 +43,13 @@ shingmail init --address alice@shingbot.com
 
 凭证写到 `~/.config/shingmail/credentials.json`（0600）。程序入口是 `shingmail-skill/scripts/shingmail`，可加进 PATH 或用绝对路径。
 
+```bash
+# 可选：把入口加进 PATH
+export PATH="$HOME/.config/opencode/skills/shingmail-skill/scripts:$PATH"
+```
+
+下面的示例都假设 `shingmail` 已在 PATH；否则请换成绝对路径。
+
 ## 命令
 
 | 命令 | 说明 |

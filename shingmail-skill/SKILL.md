@@ -12,7 +12,7 @@ version: 1.1.0
 
 ## 一、准备
 
-安装：从 <https://github.com/weshing/shingmail> 取仓库，运行 `./install.sh [skills 目录]`（默认 `~/.config/opencode/skills`）；或把 `shingmail-skill/` 手动放进 skills 目录。命令入口是 `scripts/shingmail`（加进 PATH，或用绝对路径调用）。
+安装：从 <https://github.com/weshing/shingmail> 取仓库，运行 `./install.sh [skills 目录]`（默认 `~/.config/opencode/skills`）；或把 `shingmail-skill/` 手动放进 skills 目录。命令入口是 `scripts/shingmail`（加进 PATH，或用绝对路径调用；下文示例假设已在 PATH）。
 
 你会拿到两种凭证之一：
 
