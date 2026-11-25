@@ -12,7 +12,7 @@ version: 1.0.0
 
 ## 一、准备
 
-安装：把 `skills/shingmail-skill/` 放进你的 skills 目录；命令入口是 `scripts/shingmail`（加进 PATH，或用绝对路径调用）。
+安装：从 <https://github.com/weshing/shingmail> 取 `shingmail-skill/` 放进你的 skills 目录；命令入口是 `scripts/shingmail`（加进 PATH，或用绝对路径调用）。
 
 你会拿到两种凭证之一：
 
