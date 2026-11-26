@@ -17,7 +17,7 @@
 
 ```bash
 # 1) 取仓库
-git clone https://github.com/weshing/shingmail.git
+git clone https://github.com/shingbot/shingmail.git
 cd shingmail
 
 # 2) 安装到 agent skills 目录（默认 ~/.config/opencode/skills）
@@ -115,7 +115,7 @@ done
 
 - 当前版本：**1.1.0**（`shingmail --version`）。
 - 本仓库是技能唯一源；推送后 GitHub Actions 会跑语法检查、`--version/--help`、可执行位与 `bash -n install.sh`。
-- 本地修改后提交到 `weshing/shingmail` 即可；不要再把技能复制回应用仓库。
+- 本地修改后提交到 `shingbot/shingmail` 即可；不要再把技能复制回应用仓库。
 
 ## 安全
 
