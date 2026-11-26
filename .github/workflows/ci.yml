@@ -14,12 +14,18 @@ jobs:
         with:
           python-version: '3.x'
       - name: 语法检查
-        run: python3 -m py_compile shingmail-skill/scripts/shingmail
+        run: python3 -m py_compile scripts/shingmail
       - name: 版本与帮助
         run: |
-          python3 shingmail-skill/scripts/shingmail --version
-          python3 shingmail-skill/scripts/shingmail --help >/dev/null
+          python3 scripts/shingmail --version
+          python3 scripts/shingmail --help >/dev/null
       - name: 可执行位与安装脚本
         run: |
-          test -x shingmail-skill/scripts/shingmail
+          test -x scripts/shingmail
           bash -n install.sh
+      - name: 安装冒烟
+        run: |
+          ./install.sh "$RUNNER_TEMP/skills"
+          test -f "$RUNNER_TEMP/skills/shingmail/SKILL.md"
+          test -x "$RUNNER_TEMP/skills/shingmail/scripts/shingmail"
+          "$RUNNER_TEMP/skills/shingmail/scripts/shingmail" --version

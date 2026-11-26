@@ -1,7 +1,7 @@
 ---
-name: shingmail-skill
+name: shingmail
 description: 用 shingmail（https://mail.shingbot.com）读写自己的 @shingbot.com 邮箱：列出收件箱、读信、取验证码或登录链接、发信、看已发送。凭证是「邮箱地址 + 邮箱密码」（或 SHINGMAIL_JWT）；首次 `shingmail init` 写入 ~/.config/shingmail/credentials.json（0600）。当用户要查某个网站的验证码、读一封邮件、用自己的 @shingbot.com 邮箱发信，或提到 shingmail / shingbot 邮箱 / 临时邮箱时使用。
-version: 1.1.0
+version: 1.2.0
 ---
 
 # shingmail — 用户侧收发邮件
@@ -12,7 +12,7 @@ version: 1.1.0
 
 ## 一、准备
 
-安装：从 <https://github.com/shingbot/shingmail> 取仓库，运行 `./install.sh [skills 目录]`（默认 `~/.config/opencode/skills`）；或把 `shingmail-skill/` 手动放进 skills 目录。命令入口是 `scripts/shingmail`（加进 PATH，或用绝对路径调用；下文示例假设已在 PATH）。
+安装：从 <https://github.com/shingbot/shingmail> 取仓库，运行 `./install.sh [skills 目录]`（默认 `~/.config/opencode/skills/shingmail`）；或把 `SKILL.md` 和 `scripts/` 手动放进 skills 目录下的 `shingmail/`。命令入口是 `scripts/shingmail`（加进 PATH，或用绝对路径调用；下文示例假设已在 PATH）。
 
 你会拿到两种凭证之一：
 

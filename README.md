@@ -1,12 +1,25 @@
-# Shingmail — user/agent skill
+# shingmail — 用户 / agent 邮箱技能
 
-用户/agent 侧的 Shingmail 邮箱技能：查设置、列邮件、读信、取验证码、发信、发件箱、删除、改密、退出。
+用 `shingmail` 读写自己的 `@shingbot.com` 邮箱：查设置、列邮件、读信、取验证码或登录链接、发信、看已发送、删除、改密、退出。输出统一为 JSON，适合 `jq` 和 agent 直接解析。
+
+[![CI](https://github.com/shingbot/shingmail/actions/workflows/ci.yml/badge.svg)](https://github.com/shingbot/shingmail/actions/workflows/ci.yml)
 
 - 服务面板：<https://mail.shingbot.com>
-- 详细说明：[`shingmail-skill/SKILL.md`](shingmail-skill/SKILL.md)
-- 本仓库是技能的**唯一源**；应用代码在私有仓库 `shingbot/shingmail`，不再包含本技能。
+- 技能说明：[`SKILL.md`](SKILL.md)
 
-管理侧能力（建邮箱、发信开关、吊销 token、注册开关、审计）不在此仓库，由服务提供方使用私有管理工具。
+## 仓库定位
+
+本仓库**只有用户/agent 侧技能**：`SKILL.md` + `scripts/shingmail` + 安装脚本。
+
+服务端应用（Cloudflare Worker、邮件解析、管理侧能力）在私有仓库，不在这里；本仓库不包含也不依赖应用源码。
+
+| 仓库 | 可见性 | 作用 |
+|---|---|---|
+| `shingbot/shingmail` | 公开 | 本技能（用户 / agent 侧） |
+| `shingbot/shingmail-app` | 私有 | 服务端应用，需权限 |
+| `weshing` | 母组织 | 其他产品（如 `shing-player`） |
+
+管理侧能力（建邮箱、发信开关、吊销 token、注册开关、审计）由服务提供方用私有工具完成，不在本仓库。
 
 ## 要求
 
@@ -15,40 +28,56 @@
 
 ## 安装
 
+### 方式 A：git clone（推荐）
+
 ```bash
-# 1) 取仓库
 git clone https://github.com/shingbot/shingmail.git
 cd shingmail
 
-# 2) 安装到 agent skills 目录（默认 ~/.config/opencode/skills）
+# 默认安装到 ~/.config/opencode/skills/shingmail
 ./install.sh
 
-# 或指定目录
+# 或指定 skills 目录（会在目录下创建 shingmail/）
 ./install.sh ~/.claude/skills
 ```
 
-手动安装：把 `shingmail-skill/` 整个目录放进 skills 目录，并确保 `scripts/shingmail` 可执行。
+也可以用 `OPENCODE_SKILLS_DIR` 指定默认目录。
+
+### 方式 B：skills.sh CLI
+
+```bash
+npx skills add shingbot/shingmail
+```
+
+### 方式 C：手动
+
+在 skills 目录下创建 `shingmail/`，把仓库里的 `SKILL.md` 和 `scripts/` 放进去，并确保 `scripts/shingmail` 可执行。
+
+### 入口
+
+安装后的入口是 `~/.config/opencode/skills/shingmail/scripts/shingmail`。可加进 PATH：
+
+```bash
+export PATH="$HOME/.config/opencode/skills/shingmail/scripts:$PATH"
+```
+
+下文示例都假设 `shingmail` 已在 PATH；否则请换成绝对路径。
+
+> 从旧版升级：安装目录已由 `shingmail-skill` 改为 `shingmail`，`./install.sh` 会自动删除旧目录，避免同一技能出现两份。
 
 ## 初始化
 
 两种凭证二选一：
 
 ```bash
-# A. agent token（推荐）：365 天，不保存密码
+# A. agent token（推荐给 agent）：365 天，不保存密码
 shingmail init --token '<agent-token>'
 
-# B. 地址 + 密码（人类/CLI）：密码走隐藏输入
+# B. 地址 + 密码（人类 / CLI）：密码走隐藏输入
 shingmail init --address alice@shingbot.com
 ```
 
-凭证写到 `~/.config/shingmail/credentials.json`（0600）。程序入口是 `shingmail-skill/scripts/shingmail`，可加进 PATH 或用绝对路径。
-
-```bash
-# 可选：把入口加进 PATH
-export PATH="$HOME/.config/opencode/skills/shingmail-skill/scripts:$PATH"
-```
-
-下面的示例都假设 `shingmail` 已在 PATH；否则请换成绝对路径。
+凭证写到 `~/.config/shingmail/credentials.json`（0600）。token 模式不会存密码；地址 + 密码模式会用密码换 7 天 JWT，并在过期或 401 时自动重登。
 
 ## 命令
 
@@ -61,11 +90,9 @@ export PATH="$HOME/.config/opencode/skills/shingmail-skill/scripts:$PATH"
 | `shingmail send --to x@y.com --subject 主题 --body 内容 [--html] [--from-name 名字]` | 发信（需 `can_send=true`） |
 | `shingmail sendbox [--limit 20]` | 已发送 |
 | `shingmail delete <id>` | 删除收件箱邮件 |
-| `shingmail passwd`（`password`） | 改密码（旧密码/旧 JWT 立即失效；仅地址+密码模式） |
+| `shingmail passwd`（`password`） | 改密码（旧密码 / 旧 JWT 立即失效；仅地址 + 密码模式） |
 | `shingmail logout [--forget]` | token 模式=服务端吊销；密码模式=只清本地 JWT |
 | `shingmail --version` | 版本 |
-
-输出统一为 JSON，便于 `jq` / agent 解析。
 
 ## 示例
 
@@ -79,6 +106,9 @@ for i in {1..20}; do
   echo "$out" | jq -e '.code' >/dev/null && { echo "$out"; break; }
   sleep 3
 done
+
+# 发信
+shingmail send --to someone@example.com --subject test --body hello
 ```
 
 ## 配置
@@ -90,6 +120,17 @@ done
 | `SHINGMAIL_ADDRESS` / `SHINGMAIL_PASSWORD` | 地址 + 密码模式 |
 | `SHINGMAIL_JWT` | agent token 模式 |
 | `SHINGMAIL_SITE_PASSWORD` | 站点访问密码（当前未启用） |
+
+## 目录结构
+
+```text
+.
+├── SKILL.md              # 技能定义（agent 读取）
+├── scripts/shingmail     # 命令行入口（Python 3，标准库）
+├── install.sh            # 安装到 skills 目录
+├── README.md
+└── .github/workflows/    # CI：语法、版本、帮助、可执行位、安装冒烟
+```
 
 ## 常见问题
 
@@ -109,17 +150,21 @@ done
 |---|---|---|
 | agent token 停用 | `shingmail logout` | 服务端 `token_version+1`，token 立即失效；agent 无法自行恢复 |
 | 密码模式退出 | `shingmail logout` | 只清本地 JWT；密码还在就能再登录，**不是吊销** |
-| 彻底停用 | `shingmail passwd` 或管理侧 `disable` | 旧密码/旧 JWT 一起失效 |
+| 彻底停用 | `shingmail passwd` 或管理侧 `disable` | 旧密码 / 旧 JWT 一起失效 |
 
 ## 版本与发布
 
-- 当前版本：**1.1.0**（`shingmail --version`）。
-- 本仓库是技能唯一源；推送后 GitHub Actions 会跑语法检查、`--version/--help`、可执行位与 `bash -n install.sh`。
-- 本地修改后提交到 `shingbot/shingmail` 即可；不要再把技能复制回应用仓库。
+- 当前版本：**1.2.0**（`shingmail --version`）。
+- 推送后 GitHub Actions 会跑语法检查、`--version` / `--help`、可执行位、`bash -n install.sh`，并做一次安装冒烟。
+- 修改后提交到 `shingbot/shingmail`；不要再把技能复制回应用仓库。
 
 ## 安全
 
 - 邮箱密码与 agent token 都是账户凭据：不要贴进对话、不要提交到仓库。
 - 发信默认关闭；`settings.can_send=false` 时不要尝试 `send`。
 - 长期授权用 agent token，不要给密码；`logout` 会吊销 token，agent 无法自行恢复。
-- 密码模式下 `logout` 只是清本地 JWT，不是吊销；要真正停用请改密码或走管理侧重置/停用。
+- 密码模式下 `logout` 只是清本地 JWT，不是吊销；要真正停用请改密码或走管理侧重置 / 停用。
+
+## License
+
+Apache-2.0，见 [`LICENSE`](LICENSE)。

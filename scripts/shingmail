@@ -22,7 +22,7 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_BASE = "https://mail.shingbot.com"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 CONFIG_PATH = Path(os.environ.get("SHINGMAIL_CONFIG", str(Path.home() / ".config/shingmail/credentials.json")))
 
 
@@ -116,7 +116,7 @@ def login(cfg: dict) -> dict:
 
 def http(cfg: dict, method: str, path: str, body: dict | None = None, auth: bool = True) -> tuple[int, object]:
     url = cfg["base"].rstrip("/") + path
-    headers = {"Accept": "application/json", "User-Agent": f"shingmail-skill/{VERSION}"}
+    headers = {"Accept": "application/json", "User-Agent": f"shingmail/{VERSION}"}
     if body is not None:
         headers["Content-Type"] = "application/json"
         data = json.dumps(body).encode()
